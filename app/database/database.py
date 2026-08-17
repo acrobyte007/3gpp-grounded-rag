@@ -1,0 +1,150 @@
+import asyncio
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator, List
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy import text
+import os
+import dotenv
+from app.database.models import Base
+from logger.logger import get_logger, log_info, log_error, log_exception
+
+dotenv.load_dotenv()
+logger = get_logger(__name__)
+
+
+class DatabaseManager:
+    
+    def __init__(self):
+        self.engine = None
+        self.async_session_maker = None
+        self._initialized = False
+    
+    async def initialize(self):
+        if self._initialized:
+            return
+        
+        database_url = os.getenv("DB_URL")
+        pool_size = 20
+        max_overflow = 10
+        pool_timeout = 30
+        pool_recycle = 3600
+        pool_pre_ping = True
+        self.engine = create_async_engine(
+            database_url,
+            echo=False,
+            pool_size=pool_size,
+            max_overflow=max_overflow,
+            pool_timeout=pool_timeout,
+            pool_recycle=pool_recycle,
+            pool_pre_ping=pool_pre_ping,
+            pool_use_lifo=True,
+        )
+        
+        self.async_session_maker = async_sessionmaker(
+            self.engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+            autocommit=False,
+            autoflush=False,
+        )
+        
+        self._initialized = True
+        log_info(logger, "Database manager initialized with connection pooling")
+    
+    async def get_session(self) -> AsyncGenerator[AsyncSession, None]:
+        if not self._initialized:
+            await self.initialize()
+        
+        async with self.async_session_maker() as session:
+            try:
+                yield session
+            except Exception as e:
+                await session.rollback()
+                log_exception(logger, e)
+                raise
+            finally:
+                await session.close()
+    
+    @asynccontextmanager
+    async def connect(self):
+        if not self._initialized:
+            await self.initialize()
+        
+        async with self.async_session_maker() as session:
+            try:
+                yield session
+            finally:
+                await session.close()
+    
+    async def get_pool_stats(self) -> dict:
+        if not self._initialized or not self.engine:
+            return {"error": "Database not initialized"}
+        
+        pool = self.engine.pool
+        return {
+            "size": pool.size(),
+            "checked_in": pool.checkedin(),
+            "overflow": pool.overflow(),
+            "total": pool.size() + pool.overflow(),
+            "checked_out": pool.checkedout(),
+            "initialized": self._initialized,
+        }
+    
+    async def health_check(self) -> bool:
+        try:
+            async with self.connect() as session:
+                await session.execute(text("SELECT 1"))
+                return True
+        except Exception as e:
+            log_error(logger, f"Health check failed: {str(e)}")
+            return False
+    async def create_tables(self):
+        await self.initialize()
+        async with self.engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            
+    async def close_all(self):
+        if self.engine:
+            await self.engine.dispose()
+            self._initialized = False
+            log_info(logger, "All database connections closed")
+
+    async def list_all_tables(self) -> List[str]:
+        """List all tables in the public schema."""
+        try:
+            async with self.connect() as session:
+                result = await session.execute(
+                    text("""
+                        SELECT table_name 
+                        FROM information_schema.tables 
+                        WHERE table_schema = 'public'
+                        AND table_type = 'BASE TABLE'
+                        ORDER BY table_name
+                    """)
+                )
+                tables = [row[0] for row in result.fetchall()]
+                log_info(logger, f"Found tables: {tables}")
+                return tables
+        except Exception as e:
+            log_error(logger, f"Failed to list tables: {str(e)}")
+            return []
+
+db_manager = DatabaseManager()
+
+if __name__ == "__main__":
+    async def main():
+        await db_manager.initialize()
+        await db_manager.create_tables()
+        tables = await db_manager.list_all_tables()
+        print(f"Tables in the database: {tables}")
+        await db_manager.close_all()
+
+    asyncio.run(main())
+
+
+
+
+
+
+
+    

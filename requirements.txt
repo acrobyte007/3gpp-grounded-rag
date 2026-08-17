@@ -1,1 +1,13 @@
-
+sqlalchemy
+asyncpg
+python-dotenv
+uvicorn
+fastapi
+python-jose[cryptography]
+passlib[argon2]
+python-multipart
+numpy
+langchain
+langchain_google_genai
+pinecone
+boto3
