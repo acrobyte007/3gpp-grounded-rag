@@ -22,9 +22,6 @@ async def upload_document(
     file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user)
 ):
-    """
-    Upload a document, extract text, chunk it, and store embeddings in Pinecone.
-    """
     temp_file_path = None
     
     try:
@@ -70,16 +67,7 @@ async def upload_document(
             lang_list.append(chunk["language"])
             tokens_list.append(embedding_data["tokens"])
 
-        # Use user_id as namespace
-        result = pinecone_service.upsert(
-            namespace=str(user_id),  # User ID as namespace
-            document_id=object_name,
-            vectors=vectors,
-            chunks=chunks_list,
-            lang_list=lang_list,
-            tokens_list=tokens_list
-        )
-
+        # Save document to database first to get the ID
         async with db_manager.connect() as session:
             doc_repo = DocumentRepository(session)
             
@@ -94,6 +82,18 @@ async def upload_document(
                 chunks=len(chunks),
                 primary_language=lang_list[0] if lang_list else "en"
             )
+            
+            document_id = str(document.id)
+
+        # Use the database document_id in Pinecone
+        result = pinecone_service.upsert(
+            namespace=str(user_id),
+            document_id=document_id,  # Use database ID instead of object_name
+            vectors=vectors,
+            chunks=chunks_list,
+            lang_list=lang_list,
+            tokens_list=tokens_list
+        )
 
         if temp_file_path and os.path.exists(temp_file_path):
             os.unlink(temp_file_path)
@@ -103,7 +103,7 @@ async def upload_document(
             content={
                 "message": "Document uploaded and processed successfully",
                 "file_name": file.filename,
-                "document_id": str(document.id),
+                "document_id": document_id,
                 "namespace": str(user_id),
                 "chunks": len(chunks),
                 "primary_language": lang_list[0] if lang_list else "en"

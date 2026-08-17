@@ -4,8 +4,10 @@ from app.database.database import db_manager
 from app.services.embeddings import embedding_service
 from app.database.pincone_db import pinecone_service
 from app.services.filebase import storage
+from app.agent.agent import rag_agent
 from app.routes.auth import router as auth_router
 from app.routes.ingestion import router as ingestion_router
+from app.routes.chat import router as chat_router
 from logger.logger import get_logger
 
 logger = get_logger(__name__)
@@ -17,6 +19,7 @@ async def lifespan(app: FastAPI):
     
     await db_manager.initialize()
     await embedding_service.initialize()
+    rag_agent.initialize()
     pinecone_service.initialize()
     storage.initialize()
 
@@ -51,3 +54,4 @@ app = FastAPI(
 
 app.include_router(auth_router)
 app.include_router(ingestion_router)
+app.include_router(chat_router)
