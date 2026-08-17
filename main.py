@@ -7,6 +7,7 @@ from app.services.filebase import storage
 from app.agent.agent import rag_agent
 from app.routes.auth import router as auth_router
 from app.routes.ingestion import router as ingestion_router
+from app.routes.docs import router as docs_router
 from app.routes.chat import router as chat_router
 from logger.logger import get_logger
 
@@ -54,4 +55,5 @@ app = FastAPI(
 
 app.include_router(auth_router)
 app.include_router(ingestion_router)
+app.include_router(docs_router)
 app.include_router(chat_router)

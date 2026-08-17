@@ -78,14 +78,14 @@ class DocumentRepository:
         return document
 
     async def get_document_by_id(self, document_id: str) -> Optional[Document]:
-        result = await self.session.execute(
-            select(Document).where(Document.id == document_id)
-        )
-        return result.scalar_one_or_none()
+            result = await self.session.execute(
+                select(Document).where(Document.id == document_id)
+            )
+            return result.scalar_one_or_none()
 
     async def get_documents_by_user(self, user_id: str) -> List[Document]:
         result = await self.session.execute(
-            select(Document).where(Document.user_id == user_id)
+            select(Document).where(Document.user_id == user_id).order_by(Document.created_at.desc())
         )
         return result.scalars().all()
 
