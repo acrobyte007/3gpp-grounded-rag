@@ -11,3 +11,6 @@ langchain
 langchain_google_genai
 pinecone
 boto3
+langchain_community
+docx
+pdfplumber

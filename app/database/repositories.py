@@ -1,9 +1,9 @@
 # app/database/repositories/user_repository.py
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.database.models import User
+from app.database.models import Document, User
 from app.services.auth import hash_password, verify_password
-from typing import Optional
+from typing import Optional,List
 import uuid
 
 class UserRepository:
@@ -43,3 +43,56 @@ class UserRepository:
             return None
         
         return user
+
+
+class DocumentRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def create_document(
+        self,
+        user_id: str,
+        file_name: str,
+        file_type: str,
+        file_size: int,
+        filebase_key: str,
+        filebase_url: str,
+        bucket_name: str,
+        chunks: int,
+        primary_language: str
+    ) -> Document:
+        document = Document(
+            user_id=user_id,
+            file_name=file_name,
+            file_type=file_type,
+            file_size=file_size,
+            filebase_key=filebase_key,
+            filebase_url=filebase_url,
+            bucket_name=bucket_name,
+            chunks=chunks,
+            primary_language=primary_language
+        )
+        self.session.add(document)
+        await self.session.commit()
+        await self.session.refresh(document)
+        return document
+
+    async def get_document_by_id(self, document_id: str) -> Optional[Document]:
+        result = await self.session.execute(
+            select(Document).where(Document.id == document_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_documents_by_user(self, user_id: str) -> List[Document]:
+        result = await self.session.execute(
+            select(Document).where(Document.user_id == user_id)
+        )
+        return result.scalars().all()
+
+    async def delete_document(self, document_id: str) -> bool:
+        document = await self.get_document_by_id(document_id)
+        if not document:
+            return False
+        await self.session.delete(document)
+        await self.session.commit()
+        return True

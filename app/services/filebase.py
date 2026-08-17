@@ -140,5 +140,23 @@ class FilebaseStorage:
             )
             raise
 
+    def get_file_url(self, object_name: str) -> str:
+        """
+        Generate a URL for the uploaded file.
+        """
+        try:
+            endpoint = os.environ.get("FILEBASE_ENDPOINT")
+            bucket = self.bucket_name
+            
+            # Construct the URL
+            url = f"{endpoint}/{bucket}/{object_name}"
+            
+            logger.info(f"Generated URL for '{object_name}'")
+            return url
+            
+        except Exception as e:
+            logger.error(f"Failed to generate URL: {str(e)}")
+            return f"{self.bucket_name}/{object_name}"
+
 
 storage = FilebaseStorage()
