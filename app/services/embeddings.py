@@ -1,8 +1,10 @@
+# app/services/embeddings.py
 import time
 import re
 import numpy as np
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from logger.logger import get_logger
+from app.services.keyword_extraction import keyword_extractor
 
 logger = get_logger(__name__)
 
@@ -23,9 +25,9 @@ class EmbeddingService:
             model="models/gemini-embedding-001"
         )
         self._initialized = True
+        keyword_extractor.initialize()
         logger.info("EmbeddingService initialized")
 
-  
     def tokenize_sentences(self, sentences):
         if isinstance(sentences, str):
             sentences = [sentences]
@@ -34,7 +36,16 @@ class EmbeddingService:
             sentence = re.sub(r"[^\x00-\x7F]+", " ", sentence)
             sentence = re.sub(r"[^\w\s]", " ", sentence)
             sentence = re.sub(r"\s+", " ", sentence).strip()
-            tokenized.append(sentence.split())
+            tokens = sentence.split()
+            try:
+                if keyword_extractor._initialized:
+                    keywords = keyword_extractor.extract_keywords(sentence)
+                    if keywords:
+                        tokens.extend(keywords)
+            except Exception as e:
+                logger.error(f"Failed to extract keywords: {str(e)}")
+            
+            tokenized.append(tokens)
         return tokenized
 
     def extract_retry_time(self, error_msg):
@@ -97,5 +108,6 @@ class EmbeddingService:
             }
 
         return result
+
 
 embedding_service = EmbeddingService()

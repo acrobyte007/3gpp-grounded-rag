@@ -5,15 +5,98 @@ from app.agent.exceptions import RetryableToolError, NonRetryableToolError, Time
 from app.services.embeddings import embedding_service
 from app.database.pincone_db import pinecone_service
 from logger.logger import get_logger
+import math
+from collections import Counter
 
 logger = get_logger(__name__)
+
+
+class BM25Reranker:
+    def __init__(self, k1: float = 1.5, b: float = 0.75):
+        self.k1 = k1
+        self.b = b
+        self.avgdl = 0
+        self.doc_freqs = {}
+        self.doc_len = []
+        self.total_docs = 0
+
+    def fit(self, corpus: List[List[str]]):
+        self.total_docs = len(corpus)
+        self.doc_len = [len(doc) for doc in corpus]
+        self.avgdl = sum(self.doc_len) / self.total_docs
+        
+        for doc in corpus:
+            doc_counter = Counter(doc)
+            for term in doc_counter:
+                if term not in self.doc_freqs:
+                    self.doc_freqs[term] = 0
+                self.doc_freqs[term] += 1
+
+    def score(self, query: List[str], doc: List[str]) -> float:
+        score = 0.0
+        doc_len = len(doc)
+        doc_counter = Counter(doc)
+        
+        for term in query:
+            if term not in self.doc_freqs:
+                continue
+            
+            tf = doc_counter.get(term, 0)
+            if tf == 0:
+                continue
+            
+            idf = math.log(
+                (self.total_docs - self.doc_freqs[term] + 0.5) /
+                (self.doc_freqs[term] + 0.5) + 1.0
+            )
+            
+            numerator = tf * (self.k1 + 1)
+            denominator = tf + self.k1 * (1 - self.b + self.b * (doc_len / self.avgdl))
+            
+            score += idf * (numerator / denominator)
+        
+        return score
+
+    def rerank(self, query: List[str], candidates: List[Dict]) -> List[Dict]:
+        if not candidates:
+            return []
+        
+        corpus = []
+        valid_candidates = []
+        
+        for candidate in candidates:
+            tokens = candidate.get("tokens", [])
+            if tokens:
+                corpus.append(tokens)
+                valid_candidates.append(candidate)
+        
+        if not corpus:
+            return []
+        
+        self.fit(corpus)
+        
+        scored_candidates = []
+        for i, doc in enumerate(corpus):
+            score = self.score(query, doc)
+            scored_candidates.append({
+                **valid_candidates[i],
+                "bm25_score": score
+            })
+        
+        reranked = sorted(
+            scored_candidates,
+            key=lambda x: x.get("bm25_score", 0),
+            reverse=True
+        )
+        
+        return reranked
 
 
 async def vector_search(
     namespace: str,
     query: str,
     doc_ids: List[str],
-    top_k: int = 5
+    top_k: int = 30
 ) -> List[Dict]:
     try:
         embedding_result = embedding_service.embed([query])
@@ -33,10 +116,7 @@ async def vector_search(
         for i in range(len(results["chunk_texts"])):
             chunks.append({
                 "text": results["chunk_texts"][i],
-                "document_id": results["chunk_ids"][i].split("#")[0] if results["chunk_ids"][i] else "",
-                "chunk_number": i + 1,
-                "score": 0,
-                "language": results["lang_list"][i] if i < len(results["lang_list"]) else "en"
+                "tokens": results["tokens_list"][i] if i < len(results["tokens_list"]) else []
             })
         
         return chunks
@@ -56,18 +136,12 @@ async def vector_search(
 async def search(
     runtime: ToolRuntime[UserContext],
     query: str,
-) -> List[Dict]:
+) -> str:
     """
-    Perform vector similarity search on Pinecone index.
-    
     Args:
-        namespace: User namespace for isolation
         query: Search query string
-        doc_ids: List of document IDs to filter results
-        top_k: Number of results to return per document
-    
     Returns:
-        List of dictionaries containing chunk text, document ID, chunk number, score, and language
+        List of dictionaries containing chunk text, document ID, chunk number, language, and tokens
     """
     if runtime is None:
         raise NonRetryableToolError("runtime cannot be None.")
@@ -91,20 +165,29 @@ async def search(
             namespace=context.namespace,
             query=query,
             doc_ids=context.doc_ids,
-            top_k=5
+            top_k=30
         )
 
-        if chunks is None:
-            raise RetryableToolError("Retriever returned None.")
+        if not chunks:
+            logger.warning("No relevant chunks found in the knowledge base.")
+            return "No relevant information found in the documents."
+
+        query_tokens = embedding_service.tokenize_sentences(query)[0]
+        logger.info("Tokenized query: %s", query_tokens)
+        reranker = BM25Reranker()
+        reranked_chunks = reranker.rerank(query_tokens, chunks)
+        
+        top_chunks = reranked_chunks[:10]
 
         logger.info(
-            "Retrieved %d chunks | namespace=%s | doc_ids=%s",
+            "Retrieved %d chunks, reranked to %d | namespace=%s | doc_ids=%s",
             len(chunks),
+            len(top_chunks),
             context.namespace,
             context.doc_ids,
         )
 
-        return chunks
+        return top_chunks
 
     except TimeoutError as e:
         logger.exception("Retrieval timed out.")

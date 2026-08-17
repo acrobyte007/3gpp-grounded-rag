@@ -15,3 +15,6 @@ langchain_community
 docx
 pdfplumber
 langchain_mistralai
+pytextrank
+rank-bm25
+yake
