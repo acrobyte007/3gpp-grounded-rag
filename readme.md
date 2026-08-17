@@ -102,9 +102,9 @@ graph TD
         M --> N[Return Answer to User]
     end
     subgraph "Data Flow"
-        P[UserContext<br/>- namespace: user_id<br/>- doc_ids: List[str]] --> F
-        Q[Query Tokens<br/>via tokenize_sentences] --> J
-        R[Chunks with<br/>- text<br/>- tokens<br/>- metadata] --> J
+        P["UserContext<br/>- namespace: user_id<br/>- doc_ids: list of str"] --> F
+        Q["Query Tokens<br/>via tokenize_sentences"] --> J
+        R["Chunks with<br/>- text<br/>- tokens<br/>- metadata"] --> J
     end
     style A fill:#e1f5fe
     style N fill:#c8e6c9
@@ -200,29 +200,26 @@ pip install -r requirements.txt
 **requirements.txt:**
 
 ```txt
-fastapi==0.104.1
-uvicorn==0.24.0
-python-multipart==0.0.6
-sqlalchemy==2.0.23
-asyncpg==0.29.0
-psycopg2-binary==2.9.9
-python-jose[cryptography]==3.3.0
-passlib[argon2]==1.7.4
-python-dotenv==1.0.0
-python-docx==1.1.0
-PyPDF2==3.0.1
-pdfplumber==0.10.3
-yake==0.4.8
-numpy==1.26.2
-langchain==0.1.0
-langchain-mistralai==0.0.3
-langgraph==0.0.22
-langsmith==0.0.87
-google-generativeai==0.3.0
-pinecone-client==2.2.4
-boto3==1.34.6
-requests==2.31.0
-aiofiles==23.2.1
+sqlalchemy
+asyncpg
+python-dotenv
+uvicorn
+fastapi
+python-jose[cryptography]
+passlib[argon2]
+python-multipart
+numpy
+langchain
+langchain_google_genai
+pinecone
+boto3
+langchain_community
+docx
+pdfplumber
+langchain_mistralai
+pytextrank
+rank-bm25
+yake
 ```
 
 ### 4. Configure Environment Variables
@@ -241,8 +238,8 @@ ACCESS_TOKEN_EXPIRE_MINUTES=30
 # Pinecone
 PINECONE_API_KEY=your-pinecone-api-key
 PINECONE_ENVIRONMENT=your-pinecone-environment
-PINECONE_INDEX_NAME=rag-index
-EMBEDDING_DIMENSION=768
+PINECONE_INDEX_NAME=google
+EMBEDDING_DIMENSION=3072
 PINECONE_METRIC=cosine
 
 # Mistral AI
@@ -277,7 +274,7 @@ pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 
 pc.create_index(
     name=os.getenv("PINECONE_INDEX_NAME"),
-    dimension=768,
+    dimension=3072,
     metric="cosine",
     spec=ServerlessSpec(
         cloud="aws",
